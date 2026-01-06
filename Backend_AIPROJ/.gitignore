@@ -1,0 +1,149 @@
+# ============================================
+# Python & Build
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================
+# Virtual Environment
+# ============================================
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# ============================================
+# Testing & Coverage
+# ============================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+*.test
+test_results/
+
+# ============================================
+# IDE & Editors
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# ============================================
+# Environment Variables & Secrets
+# ============================================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+*.secret
+credentials.json
+
+# ============================================
+# Logs & Monitoring
+# ============================================
+*.log
+logs/
+*.log.*
+log/
+
+# ============================================
+# Data & Uploads (Runtime)
+# ============================================
+data/uploads/*
+!data/uploads/.gitkeep
+data/cache/
+data/vector_store/*
+!data/vector_store/.gitkeep
+data/exports/
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================
+# ML Models & Artifacts
+# ============================================
+artifacts/
+models/
+*.pkl
+*.pth
+*.onnx
+*.h5
+*.pb
+*.joblib
+
+# ============================================
+# Temporary & Debug Files
+# ============================================
+*.tmp
+temp/
+tmp/
+cache_*.csv
+test_*.csv
+debug_*.csv
+temp_*.txt
+scratch/
+playground/
+sandbox/
+experiments/
+
+# ============================================
+# Redis & Queue
+# ============================================
+dump.rdb
+Redis/
+redis-server
+*.rdb
+
+# ============================================
+# Exports & Generated Files
+# ============================================
+exports/
+*.pdf
+*.docx
+project_structure.txt
+output/
+
+# ============================================
+# OS Specific
+# ============================================
+.DS_Store
+Thumbs.db
+desktop.ini
+*.lnk
+
+# ============================================
+# Documentation (Generated)
+# ============================================
+site/
+_build/
+docs/_build/
+docs/site/
+
+# ============================================
+# Legacy & Archive
+# ============================================
+old/
+archive/
+legacy/
+backup/
+*.bak
+*.backup

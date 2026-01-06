@@ -1,0 +1,22 @@
+fastapi
+uvicorn
+pydantic
+scikit-learn
+joblib
+sentence-transformers
+chromadb
+pdfplumber
+python-multipart
+google-generativeai
+google-genai
+openai
+ollama
+celery[redis]
+redis
+python-dotenv
+requests
+
+# PostgreSQL Database (async)
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
