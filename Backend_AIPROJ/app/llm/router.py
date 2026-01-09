@@ -11,6 +11,32 @@ from app.core.logging import setup_logger
 logger = setup_logger()
 
 
+def is_llm_configured() -> bool:
+    """
+    Check if any LLM provider is properly configured.
+    
+    Returns:
+        True if at least one LLM provider has API key configured
+    """
+    provider = get_provider()
+    
+    if provider == "none":
+        return False
+    
+    if provider == "gemini" or provider == "auto":
+        if os.getenv("GEMINI_API_KEY"):
+            return True
+    
+    if provider == "openai" or provider == "auto":
+        if os.getenv("OPENAI_API_KEY"):
+            return True
+    
+    if provider == "ollama":
+        return True  # Ollama runs locally
+    
+    return False
+
+
 def get_provider() -> str:
     """
     Get the configured LLM provider from environment.

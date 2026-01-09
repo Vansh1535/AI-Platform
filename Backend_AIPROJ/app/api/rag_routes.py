@@ -17,8 +17,11 @@ from app.utils.graceful_response import add_graceful_context, DegradationLevel
 from app.analytics.csv_insights import generate_csv_insights
 from app.analytics.csv_llm_insights import generate_llm_narrative_insights, should_enable_llm_insights
 from app.core.db.document_service import get_document_service
+from app.core.db import check_database_connection
+from app.core.db.repository import DocumentRepository
 from app.utils.telemetry import TelemetryTracker, ComponentType, merge_telemetry
 from app.utils.resilience import EmbeddingFallbackHandler, VectorDBFallbackHandler, PartialFailureHandler, WeakSignalHandler
+from app.llm.router import is_llm_configured
 
 router = APIRouter()
 logger = setup_logger("INFO")
@@ -1607,3 +1610,153 @@ async def export_document_report(
             status_code=500,
             detail=f"Export failed: {str(e)}"
         )
+
+
+@router.delete("/docs/{document_id}")
+async def delete_document(document_id: str):
+    """
+    Delete a document and all associated data.
+    
+    Removes:
+    - Vector embeddings from ChromaDB
+    - Chunks from PostgreSQL
+    - Document metadata from PostgreSQL
+    - Uploaded file from disk (if exists)
+    
+    Args:
+        document_id: UUID of document to delete
+        
+    Returns:
+        Deletion confirmation with document_id
+    """
+    try:
+        service = get_document_service()
+        
+        # Get document metadata first
+        doc = await service.get_document(document_id)
+        if not doc:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Document {document_id} not found"
+            )
+        
+        logger.info(f"Deleting document: {document_id} ({doc.get('filename', 'unknown')})")
+        
+        # Delete from ChromaDB vector store
+        try:
+            collection = get_chroma_collection()
+            collection.delete(where={"document_id": document_id})
+            logger.info(f"Deleted vectors for document: {document_id}")
+        except Exception as e:
+            logger.warning(f"ChromaDB delete failed (non-fatal): {str(e)}")
+        
+        # Delete from PostgreSQL (cascades to chunks)
+        try:
+            await DocumentRepository.delete_document(document_id)
+            logger.info(f"Deleted database records for: {document_id}")
+        except Exception as e:
+            logger.error(f"Database delete failed: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete from database: {str(e)}"
+            )
+        
+        # Delete file from disk (best effort - not critical)
+        try:
+            filename = doc.get("filename", "")
+            if filename:
+                file_path = get_uploads_path() / filename
+                if file_path.exists():
+                    file_path.unlink()
+                    logger.info(f"Deleted file: {file_path}")
+        except Exception as e:
+            logger.warning(f"File deletion failed (non-fatal): {str(e)}")
+        
+        return {
+            "status": "deleted",
+            "document_id": document_id,
+            "filename": doc.get("filename"),
+            "message": "Document and all associated data deleted successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete operation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete document: {str(e)}"
+        )
+
+
+@router.get("/admin/stats")
+async def get_admin_statistics():
+    """
+    Get system statistics for admin dashboard.
+    
+    Returns:
+    - Total documents count
+    - Total chunks count
+    - Document format breakdown
+    - System status indicators
+    
+    This endpoint provides aggregated statistics for monitoring.
+    """
+    try:
+        from app.rag.ingestion.document_registry import get_registry
+        
+        # Get all documents from registry
+        registry = get_registry()
+        result = registry.list_documents(limit=10000, offset=0)
+        documents = result.get("documents", [])
+        
+        # Calculate statistics
+        total_docs = len(documents)
+        total_chunks = sum(doc.get("chunks", 0) for doc in documents)
+        
+        # Format breakdown
+        formats = {}
+        for doc in documents:
+            fmt = doc.get("format", "unknown")
+            formats[fmt] = formats.get(fmt, 0) + 1
+        
+        # Status breakdown
+        statuses = {}
+        for doc in documents:
+            status = doc.get("status", "unknown")
+            statuses[status] = statuses.get(status, 0) + 1
+        
+        # Check database connection
+        db_available, db_error = await check_database_connection()
+        
+        # Check vector store (best effort)
+        vector_status = "connected"
+        try:
+            collection = get_chroma_collection()
+            collection.count()
+        except Exception as e:
+            vector_status = "error"
+            logger.warning(f"Vector store check failed: {str(e)}")
+        
+        # Check LLM configuration
+        llm_configured = is_llm_configured()
+        
+        return {
+            "total_documents": total_docs,
+            "total_chunks": total_chunks,
+            "formats": formats,
+            "statuses": statuses,
+            "database_status": "connected" if db_available else "error",
+            "database_error": db_error,
+            "vector_store_status": vector_status,
+            "llm_configured": llm_configured,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Admin stats failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get statistics: {str(e)}"
+        )
+

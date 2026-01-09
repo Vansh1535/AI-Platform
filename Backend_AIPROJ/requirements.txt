@@ -15,6 +15,7 @@ celery[redis]
 redis
 python-dotenv
 requests
+PyJWT==2.8.0
 
 # PostgreSQL Database (async)
 sqlalchemy>=2.0.0

@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 0 0% 100%;
+    --card: 222 47% 16%;
+    --card-foreground: 0 0% 100%;
+    --popover: 222 47% 16%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 180 100% 50%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 300 100% 50%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 222 47% 25%;
+    --muted-foreground: 240 5% 71%;
+    --accent: 271 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 348 100% 61%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 180 100% 50% / 0.3;
+    --input: 222 47% 16%;
+    --ring: 180 100% 50%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-base-bg text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .neon-border {
+    @apply border-2 border-neon-cyan;
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.5), inset 0 0 10px rgba(0, 240, 255, 0.1);
+  }
+  
+  .neon-border-magenta {
+    @apply border-2 border-neon-magenta;
+    box-shadow: 0 0 10px rgba(255, 0, 255, 0.5), inset 0 0 10px rgba(255, 0, 255, 0.1);
+  }
+  
+  .comic-panel {
+    @apply border-4 border-neon-cyan rounded-lg backdrop-blur-xl bg-base-surface/85;
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+  }
+  
+  .glassmorphism {
+    @apply backdrop-blur-xl bg-base-surface/80 border border-white/10;
+  }
+}
