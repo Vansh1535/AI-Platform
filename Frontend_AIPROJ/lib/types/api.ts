@@ -83,48 +83,57 @@ export interface AnswerResponse {
 }
 
 export interface CSVInsights {
-  basic_stats: {
-    row_count: number;
-    column_count: number;
-    file_size_mb?: number;
-    null_count: number;
+  summary: {
+    rows: number;
+    columns: number;
+    numeric_columns: number;
+    categorical_columns: number | null;
+    analysis_performed: boolean;
+  };
+  column_profiles: Record<string, any>;
+  data_quality: {
+    total_rows: number;
+    total_columns: number;
+    total_cells: number;
+    null_cells: number;
+    null_ratio: number;
     duplicate_rows: number;
+    duplicate_ratio: number;
+    memory_usage_kb: number;
+    flags: string[];
   };
-  column_stats: Array<{
-    column_name: string;
-    dtype: string;
-    mean?: number;
-    median?: number;
-    std?: number;
-    min?: number;
-    max?: number;
-    null_count: number;
-    unique_count: number;
-  }>;
-  quality: {
-    completeness: number;
-    uniqueness: number;
-    outlier_percentage?: number;
-  };
-  correlations?: Array<{
-    pair: string;
-    correlation: number;
-  }>;
-  llm_insights?: {
-    enabled: boolean;
-    mode: string;
+  insight_notes: string;
+  llm_insights: {
+    enabled?: boolean;
+    mode?: string;
     summary?: string;
     key_findings?: string[];
     recommendations?: string[];
     dataset_explanation?: string;
-    key_patterns: string[];
-    relationships: string[];
-    outliers_and_risks: string[];
+    key_patterns?: string[];
+    relationships?: string[];
+    outliers_and_risks?: string[];
     data_quality_commentary?: string;
-  };
+  } | null;
   meta: {
-    latency_ms_total: number;
+    routing: string;
+    mode: string;
+    source: string | null;
+    rows: number;
+    columns: number;
     cache_hit: boolean;
+    cache_checked: boolean;
+    cache_saved: boolean;
+    cache_skipped: boolean;
+    cache_source: string | null;
+    latency_ms_cache_read: number;
+    latency_ms_compute: number;
+    cache_access_count: number | null;
+    cached_at: string | null;
+    graceful_message: string | null;
+    degradation_level: string;
+    user_action_hint: string | null;
+    fallback_reason: string | null;
   };
 }
 

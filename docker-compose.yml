@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: aiplatform-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiplatform-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aiplatform
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me_in_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./Backend_AIPROJ
+      dockerfile: Dockerfile
+    container_name: aiplatform-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Database - individual variables for backend code
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASS: ${DB_PASSWORD:-change_me_in_production}
+      DB_NAME: aiplatform
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-change_me_in_production}@postgres:5432/aiplatform
+      
+      # Redis for Celery
+      REDIS_URL: redis://redis:6379/0
+      
+      # LLM Keys (set these!)
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_PROVIDER: gemini
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-change_me_in_production}
+      
+      # CORS (update with your frontend URL)
+      ALLOWED_ORIGINS: http://localhost:3000,http://frontend:3000
+      
+      # App Config
+      ENV: production
+      LOG_LEVEL: INFO
+    volumes:
+      - uploads_data:/app/data/uploads
+      - vector_store_data:/app/data/vector_store
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery Worker for background tasks
+  celery-worker:
+    build:
+      context: ./Backend_AIPROJ
+      dockerfile: Dockerfile
+    container_name: aiplatform-celery
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    environment:
+      # Database - individual variables for backend code
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: admin
+      DB_PASS: ${DB_PASSWORD:-change_me_in_production}
+      DB_NAME: aiplatform
+      DATABASE_URL: postgresql://admin:${DB_PASSWORD:-change_me_in_production}@postgres:5432/aiplatform
+      
+      # Redis for Celery
+      REDIS_URL: redis://redis:6379/0
+      
+      # LLM Keys
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_PROVIDER: gemini
+      
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-change_me_in_production}
+    volumes:
+      - uploads_data:/app/data/uploads
+      - vector_store_data:/app/data/vector_store
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # Frontend
+  frontend:
+    build:
+      context: ./Frontend_AIPROJ
+      dockerfile: Dockerfile
+    container_name: aiplatform-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  uploads_data:
+  vector_store_data:
+
+networks:
+  default:
+    name: aiplatform-network

@@ -16,17 +16,24 @@ import {
   RefreshCw,
   FileType,
   BarChart3,
+  LogOut,
+  ArrowLeft,
 } from 'lucide-react';
 import type { AdminStatsResponse } from '@/lib/types/api';
 
 export default function AdminPage() {
   const router = useRouter();
-  const { isAdmin, verifyToken } = useAuthStore();
+  const { isAdmin, verifyToken, logout } = useAuthStore();
   
   const [stats, setStats] = useState<AdminStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const handleLogout = () => {
+    logout();
+    router.push('/');
+  };
 
   const fetchStats = async () => {
     try {
@@ -69,12 +76,18 @@ export default function AdminPage() {
 
   const StatusBadge = ({ status }: { status: string }) => {
     const isHealthy = status === 'connected';
+    const isDegraded = status === 'degraded' || status === 'ready';
+    const statusColor = isHealthy ? 'green' : isDegraded ? 'yellow' : 'red';
+    const statusText = isHealthy ? 'Connected' : isDegraded ? (status === 'ready' ? 'Ready' : 'Degraded') : 'Error';
+    
     return (
       <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${
-        isHealthy ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+        isHealthy ? 'bg-green-500/20 text-green-400' : 
+        isDegraded ? 'bg-yellow-500/20 text-yellow-400' : 
+        'bg-red-500/20 text-red-400'
       }`}>
         {isHealthy ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-        <span className="text-sm font-medium">{isHealthy ? 'Connected' : 'Error'}</span>
+        <span className="text-sm font-medium">{statusText}</span>
       </div>
     );
   };
@@ -119,7 +132,14 @@ export default function AdminPage() {
             </h1>
             <p className="text-slate-400 mt-2">Real-time system statistics and monitoring</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchStats}
+              className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all"
+              title="Refresh stats"
+            >
+              <RefreshCw className="w-5 h-5 text-cyan-400" />
+            </button>
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={`px-4 py-2 rounded-lg border transition-all ${
@@ -134,10 +154,18 @@ export default function AdminPage() {
               </div>
             </button>
             <button
-              onClick={fetchStats}
-              className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all"
+              onClick={() => router.push('/')}
+              className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-lg border border-cyan-500/30 hover:border-cyan-500/50 transition-all"
             >
-              <RefreshCw className="w-5 h-5 text-cyan-400" />
+              <ArrowLeft className="w-4 h-4 text-cyan-400" />
+              <span className="text-cyan-400 text-sm font-medium">Back to Home</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 rounded-lg border border-red-500/30 hover:border-red-500/50 transition-all"
+            >
+              <LogOut className="w-4 h-4 text-red-400" />
+              <span className="text-red-400 text-sm font-medium">Logout</span>
             </button>
           </div>
         </div>
@@ -214,8 +242,18 @@ export default function AdminPage() {
                     <span className="text-slate-300 font-medium">ChromaDB Vector Store</span>
                     <StatusBadge status={stats.vector_store_status} />
                   </div>
+                  {stats.vector_store_status === 'degraded' && (
+                    <p className="text-yellow-400 text-sm mt-2">
+                      ⚠️ ChromaDB not initialized. Documents stored in DB only. RAG search may be limited.
+                    </p>
+                  )}
                   {stats.vector_store_status === 'error' && stats.total_documents === 0 && (
                     <p className="text-yellow-400 text-sm mt-2">No documents uploaded yet</p>
+                  )}
+                  {stats.vector_store_status === 'error' && stats.total_documents > 0 && (
+                    <p className="text-red-400 text-sm mt-2">
+                      ChromaDB unavailable. Restart backend after installing requirements.
+                    </p>
                   )}
                 </div>
                 <div className="bg-slate-900/50 rounded-lg p-4">

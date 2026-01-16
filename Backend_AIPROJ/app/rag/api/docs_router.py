@@ -5,9 +5,12 @@ Provides endpoints for listing, viewing, and debugging ingested documents.
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List, Dict, Any
+from sqlalchemy import func, select
 from app.core.logging import setup_logger
-from app.rag.ingestion.document_registry import get_registry
 from app.rag.retrieval.search import search as rag_search
+from app.core.db.repository import DocumentRepository
+from app.core.db.models import Document
+from app.core.db import get_session
 
 logger = setup_logger("INFO")
 
@@ -36,25 +39,50 @@ async def list_documents(
     try:
         logger.info(f"Listing documents: status={status}, limit={limit}, offset={offset}")
         
-        registry = get_registry()
-        result = registry.list_documents(
-            status_filter=status,
+        # Get documents from PostgreSQL
+        documents = await DocumentRepository.list_documents(
+            status=status,
             limit=limit,
             offset=offset
         )
         
-        logger.info(f"Retrieved {len(result['documents'])} documents (total: {result['total_count']})")
+        # Get total count
+        total_count = await DocumentRepository.count_documents(status=status)
+        
+        # Calculate health summary from PostgreSQL
+        async with get_session() as session:
+            # Get statistics grouped by status
+            query = select(
+                Document.ingestion_status,
+                func.count().label('count'),
+                func.avg(Document.processing_time_ms).label('avg_time_ms'),
+                func.sum(Document.chunk_count).label('total_chunks')
+            ).group_by(Document.ingestion_status)
+            
+            result = await session.execute(query)
+            health_rows = result.all()
+            
+            # Format health summary matching old structure
+            health_summary = {}
+            for row in health_rows:
+                health_summary[row.ingestion_status or "unknown"] = {
+                    "count": row.count,
+                    "avg_time_ms": float(row.avg_time_ms) if row.avg_time_ms else 0,
+                    "total_chunks": row.total_chunks or 0
+                }
+        
+        logger.info(f"Retrieved {len(documents)} documents (total: {total_count})")
         
         return {
             "status": "success",
-            "documents": result["documents"],
+            "documents": [doc.to_dict() for doc in documents],
             "pagination": {
-                "total_count": result["total_count"],
-                "limit": result["limit"],
-                "offset": result["offset"],
-                "has_more": (result["offset"] + result["limit"]) < result["total_count"]
+                "total_count": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_more": (offset + limit) < total_count
             },
-            "health_summary": result["health_summary"]
+            "health_summary": health_summary
         }
     
     except Exception as e:

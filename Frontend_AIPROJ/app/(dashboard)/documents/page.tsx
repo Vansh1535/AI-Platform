@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDropzone } from "react-dropzone";
 import { documentsAPI, ragAPI, analyticsAPI } from "@/lib/api/endpoints";
@@ -13,17 +13,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/loading";
 import { useToast } from "@/components/ui/use-toast";
-import { Upload, Search, FileText, Eye, Trash2, MessageSquare, Sparkles, BarChart3, FileDown, RefreshCw } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { Upload, Search, FileText, Trash2, MessageSquare, Sparkles, BarChart3, FileDown, RefreshCw, ChevronDown, ChevronUp, RotateCw } from "lucide-react";
 import { formatFileSize, formatDate, getStatusColor } from "@/lib/utils";
 import type { Document } from "@/lib/types/api";
 
 export default function DocumentIntelligencePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
-  const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("search");
+  const [uploadZoneOpen, setUploadZoneOpen] = useState(false);
+  const [documentsOpen, setDocumentsOpen] = useState(true);
+  const [reuploadDoc, setReuploadDoc] = useState<string | null>(null);
   
   // RAG states
   const [ragQuery, setRagQuery] = useState("");
@@ -236,12 +238,21 @@ export default function DocumentIntelligencePage() {
     multiple: true,
   });
 
-  // Preview modal
-  const { data: previewData, isLoading: previewLoading } = useQuery({
-    queryKey: ["preview", selectedDoc?.id],
-    queryFn: () => documentsAPI.preview(selectedDoc!.id, 5),
-    enabled: !!selectedDoc && previewOpen,
-  });
+  // Handle re-upload
+  const handleReupload = (docId: string) => {
+    setReuploadDoc(docId);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.csv,.txt,.docx,.md';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        uploadMutation.mutate(file);
+        setReuploadDoc(null);
+      }
+    };
+    input.click();
+  };
 
   const documents = documentsData?.documents || [];
   const totalPages = Math.ceil((documentsData?.pagination.total_count || 0) / pageSize);
@@ -288,26 +299,54 @@ export default function DocumentIntelligencePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
-              isDragActive
-                ? "border-neon-cyan bg-neon-cyan/10 shadow-glow-cyan"
-                : "border-neon-cyan/30 hover:border-neon-cyan hover:bg-neon-cyan/5"
-            }`}
-          >
-            <input {...getInputProps()} />
-            <Upload className="h-12 w-12 mx-auto mb-4 text-neon-cyan" />
-            <p className="text-lg font-medium mb-2">
-              {isDragActive ? "Drop files here" : "Drag & drop files here"}
-            </p>
-            <p className="text-sm text-muted-foreground mb-4">
-              or click to browse
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Supported: PDF, CSV, TXT, DOCX, MD
-            </p>
-          </div>
+          {/* Upload Button */}
+          {!uploadZoneOpen && (
+            <Button
+              onClick={() => setUploadZoneOpen(true)}
+              className="w-full bg-neon-cyan/10 hover:bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/30 hover:border-neon-cyan"
+              size="lg"
+            >
+              <Upload className="h-5 w-5 mr-2" />
+              Upload Document
+            </Button>
+          )}
+
+          {/* Upload Zone - Collapsible */}
+          {uploadZoneOpen && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">Upload Files</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setUploadZoneOpen(false)}
+                >
+                  <ChevronUp className="h-4 w-4" />
+                </Button>
+              </div>
+              <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
+                  isDragActive
+                    ? "border-neon-cyan bg-neon-cyan/10 shadow-glow-cyan"
+                    : "border-neon-cyan/30 hover:border-neon-cyan hover:bg-neon-cyan/5"
+                }`}
+              >
+                <input {...getInputProps()} />
+                <Upload className="h-12 w-12 mx-auto mb-4 text-neon-cyan" />
+                <p className="text-lg font-medium mb-2">
+                  {isDragActive ? "Drop files here" : "Drag & drop files here"}
+                </p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  or click to browse
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Supported: PDF, CSV, TXT, DOCX, MD
+                </p>
+              </div>
+            </div>
+          )}
+
           {uploadMutation.isPending && (
             <div className="p-4 bg-neon-cyan/10 border border-neon-cyan/30 rounded-lg">
               <div className="flex items-center justify-center space-x-3">
@@ -320,47 +359,54 @@ export default function DocumentIntelligencePage() {
             </div>
           )}
 
-          {/* Document List */}
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {isLoading ? (
-              <LoadingState message="Loading documents..." />
-            ) : documents.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No documents uploaded yet</p>
-              </div>
-            ) : (
-              documents.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-4 border border-neon-cyan/20 rounded-lg hover:border-neon-cyan/40 transition-all"
-                >
-                  <div className="flex items-center gap-3 flex-1">
-                    <FileText className="h-5 w-5 text-neon-cyan" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{doc.filename}</p>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                        <span>{doc.format.toUpperCase()}</span>
-                        <span>•</span>
-                        <span>{doc.chunk_count} chunks</span>
-                        <span>•</span>
-                        <span className={getStatusColor(doc.status)}>{doc.status}</span>
-                      </div>
-                    </div>
+          {/* Uploaded Documents - Collapsible */}
+          <div className="space-y-3">
+            <Button
+              onClick={() => setDocumentsOpen(!documentsOpen)}
+              variant="ghost"
+              className="w-full justify-between hover:bg-neon-cyan/5"
+            >
+              <span className="font-medium">Uploaded Documents ({documents.length})</span>
+              {documentsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+
+            {documentsOpen && (
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {isLoading ? (
+                  <LoadingState message="Loading documents..." />
+                ) : documents.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                    <p>No documents uploaded yet</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setSelectedDoc(doc);
-                        setPreviewOpen(true);
-                      }}
+                ) : (
+                  documents.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between p-4 border border-neon-cyan/20 rounded-lg hover:border-neon-cyan/40 transition-all"
                     >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    {isAdmin && (
-                      <>
+                      <div className="flex items-center gap-3 flex-1">
+                        <FileText className="h-5 w-5 text-neon-cyan" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{doc.filename}</p>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+                            <span>{doc.format?.toUpperCase() || 'UNKNOWN'}</span>
+                            <span>•</span>
+                            <span>{doc.chunk_count} chunks</span>
+                            <span>•</span>
+                            <span className={getStatusColor(doc.status)}>{doc.status}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleReupload(doc.id)}
+                          title="Re-upload and re-ingest this document"
+                        >
+                          <RotateCw className="h-4 w-4 text-neon-cyan" />
+                        </Button>
                         {deleteConfirm === doc.id ? (
                           <div className="flex items-center gap-1">
                             <Button
@@ -383,15 +429,16 @@ export default function DocumentIntelligencePage() {
                             variant="ghost"
                             size="icon"
                             onClick={() => setDeleteConfirm(doc.id)}
+                            title="Delete this document"
                           >
                             <Trash2 className="h-4 w-4 text-red-400" />
                           </Button>
                         )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             )}
           </div>
         </CardContent>
@@ -455,18 +502,18 @@ export default function DocumentIntelligencePage() {
 
               {ragResults && (
                 <div className="space-y-3">
-                  <h3 className="font-medium">Results ({ragResults.results?.length || 0} chunks found)</h3>
-                  {ragResults.results?.map((result: any, idx: number) => (
+                  <h3 className="font-medium">Results ({Array.isArray(ragResults) ? ragResults.length : 0} chunks found)</h3>
+                  {Array.isArray(ragResults) && ragResults.map((result: any, idx: number) => (
                     <div key={idx} className="p-4 bg-base-surface border border-neon-cyan/20 rounded-lg">
                       <div className="flex items-start justify-between mb-2">
                         <span className="text-sm font-medium text-neon-cyan">
-                          {result.metadata?.filename || 'Unknown'}
+                          Chunk {idx + 1}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           Score: {(result.score * 100).toFixed(1)}%
                         </span>
                       </div>
-                      <p className="text-sm text-muted-foreground">{result.content}</p>
+                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{result.chunk}</p>
                     </div>
                   ))}
                 </div>
@@ -548,7 +595,9 @@ export default function DocumentIntelligencePage() {
               {summary && (
                 <div className="p-4 bg-neon-purple/10 border border-neon-purple/30 rounded-lg">
                   <h3 className="font-medium text-neon-purple mb-2">Summary:</h3>
-                  <p className="text-sm whitespace-pre-wrap">{summary.summary}</p>
+                  <div className="text-sm prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{summary.summary}</ReactMarkdown>
+                  </div>
                 </div>
               )}
             </TabsContent>
@@ -583,19 +632,19 @@ export default function DocumentIntelligencePage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 bg-base-surface border border-neon-cyan/20 rounded-lg">
                       <p className="text-xs text-muted-foreground">Rows</p>
-                      <p className="text-2xl font-bold text-neon-cyan">{analytics.basic_stats?.row_count || 0}</p>
+                      <p className="text-2xl font-bold text-neon-cyan">{analytics.summary?.rows || 0}</p>
                     </div>
                     <div className="p-3 bg-base-surface border border-neon-cyan/20 rounded-lg">
                       <p className="text-xs text-muted-foreground">Columns</p>
-                      <p className="text-2xl font-bold text-neon-cyan">{analytics.basic_stats?.column_count || 0}</p>
+                      <p className="text-2xl font-bold text-neon-cyan">{analytics.summary?.columns || 0}</p>
                     </div>
                     <div className="p-3 bg-base-surface border border-neon-cyan/20 rounded-lg">
                       <p className="text-xs text-muted-foreground">Null Values</p>
-                      <p className="text-2xl font-bold text-yellow-400">{analytics.basic_stats?.null_count || 0}</p>
+                      <p className="text-2xl font-bold text-yellow-400">{analytics.data_quality?.null_cells || 0}</p>
                     </div>
                     <div className="p-3 bg-base-surface border border-neon-cyan/20 rounded-lg">
                       <p className="text-xs text-muted-foreground">Duplicates</p>
-                      <p className="text-2xl font-bold text-red-400">{analytics.basic_stats?.duplicate_rows || 0}</p>
+                      <p className="text-2xl font-bold text-red-400">{analytics.data_quality?.duplicate_rows || 0}</p>
                     </div>
                   </div>
                 </div>
@@ -604,32 +653,6 @@ export default function DocumentIntelligencePage() {
           </Tabs>
         </CardContent>
       </Card>
-
-      {/* Preview Dialog */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{selectedDoc?.filename}</DialogTitle>
-            <DialogDescription>
-              {selectedDoc?.format.toUpperCase()} • {selectedDoc?.chunk_count} chunks
-            </DialogDescription>
-          </DialogHeader>
-          {previewLoading ? (
-            <LoadingState message="Loading preview..." />
-          ) : previewData ? (
-            <div className="space-y-3">
-              {previewData.chunks?.map((chunk: any, idx: number) => (
-                <div key={idx} className="p-4 bg-base-surface border border-neon-cyan/20 rounded-lg">
-                  <p className="text-sm font-medium text-neon-cyan mb-2">Chunk {idx + 1}</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{chunk.text}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No preview available</p>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

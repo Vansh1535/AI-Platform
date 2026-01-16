@@ -5,7 +5,7 @@ import shutil
 import pandas as pd
 import time
 from datetime import datetime, timedelta
-from app.rag.ingestion.ingest import ingest_document, ingest_pdf
+from app.rag.ingestion.ingest import ingest_document, ingest_pdf, get_chroma_collection
 from app.ingestion.integration_async import ingest_multi_file_async
 from app.ingestion.dispatcher import is_supported_format, get_supported_formats
 from app.rag.retrieval.search import search, search_with_graceful_response
@@ -94,6 +94,7 @@ class AnswerRequest(BaseModel):
 class Citation(BaseModel):
     """Model for a citation."""
     chunk: str
+    score: float | None = None
     page: int | None = None
     source: str | None = None
 
@@ -792,15 +793,15 @@ class AggregatedInsights(BaseModel):
 
 class InsightsMeta(BaseModel):
     """Metadata for insights aggregation."""
-    routing: str
-    mode_requested: str
-    files_requested: int
-    files_processed: int
-    files_failed: int
-    latency_ms_summarization: int
-    latency_ms_aggregation: int
-    latency_ms_total: int
-    hybrid_used: bool
+    routing: str = "hybrid"
+    mode_requested: str = "auto"
+    files_requested: int = 0
+    files_processed: int = 0
+    files_failed: int = 0
+    latency_ms_summarization: int = 0
+    latency_ms_aggregation: int = 0
+    latency_ms_total: int = 0
+    hybrid_used: bool = False
     provider: str | None = None
     error_class: str | None = None
     # Semantic clustering fields
@@ -825,7 +826,7 @@ class AggregateInsightsResponse(BaseModel):
     meta: InsightsMeta
 
 
-@router.post("/rag/insights/aggregate", response_model=AggregateInsightsResponse)
+@router.post("/insights/aggregate", response_model=AggregateInsightsResponse)
 async def aggregate_insights_endpoint(request: AggregateInsightsRequest):
     """
     Aggregate insights across multiple documents.
@@ -1703,27 +1704,36 @@ async def get_admin_statistics():
     This endpoint provides aggregated statistics for monitoring.
     """
     try:
-        from app.rag.ingestion.document_registry import get_registry
+        from app.core.db.repository import DocumentRepository
+        from app.core.db.models import Document
+        from app.core.db import get_session, init_engine
         
-        # Get all documents from registry
-        registry = get_registry()
-        result = registry.list_documents(limit=10000, offset=0)
-        documents = result.get("documents", [])
+        # Ensure database is initialized
+        init_engine()
+        
+        # Get all documents from PostgreSQL
+        documents = await DocumentRepository.list_documents(limit=10000, offset=0)
         
         # Calculate statistics
         total_docs = len(documents)
-        total_chunks = sum(doc.get("chunks", 0) for doc in documents)
+        total_chunks = sum(doc.chunk_count or 0 for doc in documents)
         
-        # Format breakdown
+        # Format breakdown from mime_type
         formats = {}
         for doc in documents:
-            fmt = doc.get("format", "unknown")
+            # Extract format from mime_type or telemetry
+            if doc.mime_type:
+                fmt = doc.mime_type.split('/')[-1]
+            elif doc.telemetry and isinstance(doc.telemetry, dict):
+                fmt = doc.telemetry.get("format", "unknown")
+            else:
+                fmt = "unknown"
             formats[fmt] = formats.get(fmt, 0) + 1
         
-        # Status breakdown
+        # Status breakdown from ingestion_status
         statuses = {}
         for doc in documents:
-            status = doc.get("status", "unknown")
+            status = doc.ingestion_status or "unknown"
             statuses[status] = statuses.get(status, 0) + 1
         
         # Check database connection
@@ -1731,12 +1741,36 @@ async def get_admin_statistics():
         
         # Check vector store (best effort)
         vector_status = "connected"
+        vector_count = 0
         try:
             collection = get_chroma_collection()
-            collection.count()
+            vector_count = collection.count()
+            
+            # Determine status based on vector count vs documents
+            if vector_count > 0:
+                # We have vectors - ChromaDB is working properly
+                vector_status = "connected"
+                logger.info(f"Vector store healthy: {vector_count} vectors")
+            elif total_docs > 0:
+                # We have documents in DB but no vectors in ChromaDB
+                # This means documents were processed without vector embeddings
+                vector_status = "degraded"
+                logger.warning(f"Documents exist ({total_docs} docs) but no vectors in ChromaDB")
+            else:
+                # No documents and no vectors - ready to receive first document
+                vector_status = "ready"
+                logger.info("Vector store ready (no documents yet)")
         except Exception as e:
-            vector_status = "error"
-            logger.warning(f"Vector store check failed: {str(e)}")
+            # ChromaDB not available or not initialized
+            if total_docs > 0:
+                # We have documents in DB but ChromaDB is not working
+                # This means documents were processed without vector storage
+                vector_status = "degraded"
+                logger.warning(f"Vector store unavailable but documents exist: {str(e)}")
+            else:
+                # No documents yet, so no vectors is expected
+                vector_status = "ready"
+                logger.info("Vector store ready (no documents yet)")
         
         # Check LLM configuration
         llm_configured = is_llm_configured()

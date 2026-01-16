@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useSidebarStore } from "@/lib/store/sidebarStore";
 
 const navigation = [
   { name: "Home", href: "/", icon: Home },
@@ -29,8 +29,7 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const { collapsed, mobileOpen, toggleCollapsed, toggleMobileOpen, setMobileOpen } = useSidebarStore();
 
   return (
     <>
@@ -39,7 +38,7 @@ export function Sidebar() {
         <Button
           variant="outline"
           size="icon"
-          onClick={() => setMobileOpen(!mobileOpen)}
+          onClick={toggleMobileOpen}
           className="bg-base-surface/90 backdrop-blur-xl"
         >
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -77,7 +76,7 @@ export function Sidebar() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setCollapsed(!collapsed)}
+            onClick={toggleCollapsed}
             className="hidden lg:flex"
           >
             <ChevronLeft className={cn("h-5 w-5 transition-transform", collapsed && "rotate-180")} />

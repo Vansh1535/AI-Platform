@@ -83,7 +83,18 @@ def build_narrative_report(
     """
     
     # Combine summaries into single block
-    summary_block = " ".join(summaries) if summaries else "No summary available."
+    # Ensure all summaries are strings
+    string_summaries = []
+    for s in summaries:
+        if isinstance(s, str):
+            string_summaries.append(s)
+        elif isinstance(s, dict):
+            # Extract text from dict if present
+            string_summaries.append(s.get('text', s.get('summary', str(s))))
+        else:
+            string_summaries.append(str(s))
+    
+    summary_block = " ".join(string_summaries) if string_summaries else "No summary available."
     
     # Build insight sections
     insight_sections = []

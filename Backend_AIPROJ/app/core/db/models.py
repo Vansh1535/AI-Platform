@@ -82,6 +82,20 @@ class Document(Base):
     
     def to_dict(self):
         """Convert to dictionary for API responses."""
+        # Extract format from mime_type for frontend compatibility
+        format_str = "unknown"
+        if self.mime_type:
+            if "pdf" in self.mime_type:
+                format_str = "pdf"
+            elif "csv" in self.mime_type:
+                format_str = "csv"
+            elif "text" in self.mime_type or "plain" in self.mime_type:
+                format_str = "txt"
+            elif "word" in self.mime_type or "docx" in self.mime_type:
+                format_str = "docx"
+            elif "markdown" in self.mime_type:
+                format_str = "md"
+        
         return {
             "id": self.id,
             "filename": self.filename,
@@ -89,6 +103,8 @@ class Document(Base):
             "file_size": self.file_size,
             "file_hash": self.file_hash,
             "mime_type": self.mime_type,
+            "format": format_str,  # Frontend expects this field
+            "status": self.ingestion_status,  # Frontend expects 'status' not 'ingestion_status'
             "ingestion_status": self.ingestion_status,
             "ingestion_version": self.ingestion_version,
             "ingestion_timestamp": self.ingestion_timestamp.isoformat() if self.ingestion_timestamp else None,
@@ -102,6 +118,7 @@ class Document(Base):
             "degradation_level": self.degradation_level,
             "document_metadata": self.document_metadata,
             "tags": self.tags,
+            "source": self.file_path or "upload",  # Frontend expects 'source' field
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -16,6 +16,13 @@ const EXAMPLE_PRESETS = [
   { name: "Iris Virginica", features: [7.2, 3.0, 5.8, 2.3] },
 ];
 
+// Map class numbers to species names
+const CLASS_NAMES: { [key: string]: string } = {
+  '0': 'Iris Setosa',
+  '1': 'Iris Versicolor',
+  '2': 'Iris Virginica',
+};
+
 export default function MLPage() {
   const [features, setFeatures] = useState(["5.1", "3.5", "1.4", "0.2"]);
   const [result, setResult] = useState<PredictResponse | null>(null);
@@ -26,9 +33,10 @@ export default function MLPage() {
     mutationFn: (data: { features: number[] }) => mlAPI.predict(data.features),
     onSuccess: (data: PredictResponse) => {
       setResult(data);
+      const speciesName = CLASS_NAMES[data.prediction.toString()] || `Class ${data.prediction}`;
       toast({
         title: "Prediction Complete",
-        description: `Predicted: ${data.prediction}`,
+        description: `Predicted: ${speciesName}`,
         variant: "success",
       });
     },
@@ -208,7 +216,9 @@ export default function MLPage() {
             {/* Prediction */}
             <div className="text-center p-6 bg-gradient-to-br from-neon-cyan/20 to-neon-magenta/20 rounded-lg border border-neon-cyan/50">
               <p className="text-sm text-muted-foreground mb-2">Predicted Class</p>
-              <p className="text-3xl font-bold text-neon-cyan">{result.prediction}</p>
+              <p className="text-3xl font-bold text-neon-cyan">
+                {CLASS_NAMES[result.prediction.toString()] || `Class ${result.prediction}`}
+              </p>
             </div>
 
             {/* Probabilities */}
@@ -219,7 +229,7 @@ export default function MLPage() {
                   {Object.entries(result.probabilities).map(([className, probability]: [string, any]) => (
                     <div key={className}>
                       <div className="flex justify-between mb-1">
-                        <span className="text-sm">{className}</span>
+                        <span className="text-sm">{CLASS_NAMES[className] || `Class ${className}`}</span>
                         <span className="text-sm font-mono text-neon-cyan">
                           {(probability * 100).toFixed(1)}%
                         </span>

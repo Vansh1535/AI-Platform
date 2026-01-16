@@ -140,6 +140,10 @@ class EmbeddingFallbackHandler:
             )
         
         return data, self.tracker.get_telemetry()
+    
+    def get_telemetry(self) -> Dict[str, Any]:
+        """Get telemetry directly without data."""
+        return self.tracker.get_telemetry()
 
 
 class VectorDBFallbackHandler:

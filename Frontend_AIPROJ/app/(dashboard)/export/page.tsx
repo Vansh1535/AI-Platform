@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { documentsAPI, exportAPI } from "@/lib/api/endpoints";
+import { documentsAPI, exportAPI, analyticsAPI, ragAPI, summarizeAPI } from "@/lib/api/endpoints";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,8 +12,9 @@ import ReactMarkdown from "react-markdown";
 import type { Document } from "@/lib/types/api";
 
 export default function ExportPage() {
-  const [sourceType, setSourceType] = useState<"rag_answer" | "summary" | "csv_insights" | "aggregation">("rag_answer");
+  const [sourceType, setSourceType] = useState<"rag" | "summary" | "csv_insights" | "aggregation">("rag");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]); // For multi-document aggregation
   const [query, setQuery] = useState("");
   const [filename, setFilename] = useState("report");
   const [format, setFormat] = useState<"markdown" | "pdf">("markdown");
@@ -51,16 +52,88 @@ export default function ExportPage() {
 
   const documents = docsData?.documents || [];
 
-  // Export mutation
+  // Export mutation with data fetching
   const exportMutation = useMutation({
-    mutationFn: (data: {
+    mutationFn: async (params: {
       payload_source: string;
       payload: any;
       format: 'md' | 'pdf';
       filename: string;
-    }) => exportAPI.report(data),
+    }) => {
+      let finalPayload = params.payload;
+      
+      // Fetch actual data based on source type
+      switch (params.payload_source) {
+        case 'rag':
+          // Payload has {query, top_k}, fetch the answer
+          const ragResponse = await ragAPI.answer(params.payload.query, params.payload.top_k);
+          // Add the original query back to the response
+          finalPayload = { ...ragResponse, query: params.payload.query };
+          break;
+          
+        case 'summary':
+          // Payload has {document_id, mode, length}, fetch the summary
+          const summaryResponse = await summarizeAPI.document({
+            document_id: params.payload.document_id,
+            mode: params.payload.mode || 'auto',
+            max_chunks: 5,
+            summary_length: params.payload.length || 'medium',
+          });
+          // Add document info back to the response
+          const doc = documents.find((d: Document) => d.id === params.payload.document_id);
+          finalPayload = { 
+            ...summaryResponse, 
+            document_id: params.payload.document_id,
+            document_name: doc?.filename || 'Unknown',
+            format: doc?.format || 'unknown'
+          };
+          break;
+          
+        case 'csv_insights':
+          // Payload has {document_id, use_llm}, fetch the insights
+          const csvResponse = await analyticsAPI.csvInsights(
+            params.payload.document_id,
+            params.payload.use_llm || false
+          );
+          // Add document info back
+          const csvDoc = documents.find((d: Document) => d.id === params.payload.document_id);
+          finalPayload = {
+            ...csvResponse,
+            document_id: params.payload.document_id,
+            document_name: csvDoc?.filename || 'Unknown',
+          };
+          break;
+          
+        case 'aggregation':
+          // Payload has {document_ids}, fetch the aggregation
+          const aggregationResponse = await analyticsAPI.aggregate(
+            params.payload.document_ids,
+            'auto',
+            5
+          );
+          // Add document names to per_document summaries
+          const docsWithNames = aggregationResponse.per_document.map((docSummary: any) => {
+            const foundDoc = documents.find((d: Document) => d.id === docSummary.document_id);
+            return {
+              ...docSummary,
+              document_name: foundDoc?.filename || docSummary.document_id,
+            };
+          });
+          finalPayload = {
+            ...aggregationResponse,
+            per_document: docsWithNames,
+          };
+          break;
+      }
+      
+      // Now export with the actual data
+      return exportAPI.report({
+        ...params,
+        payload: finalPayload,
+      });
+    },
     onSuccess: (data) => {
-      if (format === "markdown" || format === "md") {
+      if (format === "markdown" || (format as string) === "md") {
         setPreview(data.content);
       } else {
         // PDF - trigger download
@@ -106,7 +179,7 @@ export default function ExportPage() {
     let sourceData: any = {};
 
     switch (sourceType) {
-      case "rag_answer":
+      case "rag":
         if (!query) {
           toast({
             title: "Missing Input",
@@ -143,15 +216,15 @@ export default function ExportPage() {
         break;
 
       case "aggregation":
-        if (documents.length < 2) {
+        if (selectedDocIds.length < 2) {
           toast({
             title: "Insufficient Documents",
-            description: "At least 2 documents required for aggregation export",
+            description: "Please select at least 2 documents for aggregation export",
             variant: "destructive",
           });
           return;
         }
-        sourceData = { document_ids: documents.slice(0, 2).map((d: Document) => d.id) };
+        sourceData = { document_ids: selectedDocIds };
         break;
     }
 
@@ -235,7 +308,7 @@ export default function ExportPage() {
               onChange={(e) => setSourceType(e.target.value as any)}
               className="w-full px-4 py-2 bg-base-bg border border-neon-cyan/30 rounded-lg focus:border-neon-cyan focus:outline-none"
             >
-              <option value="rag_answer">RAG Answer</option>
+              <option value="rag">RAG Answer</option>
               <option value="summary">Document Summary</option>
               <option value="csv_insights">CSV Insights</option>
               <option value="aggregation">Multi-Document Aggregation</option>
@@ -243,7 +316,7 @@ export default function ExportPage() {
           </div>
 
           {/* Conditional Inputs */}
-          {sourceType === "rag_answer" && (
+          {sourceType === "rag" && (
             <div>
               <label className="text-sm font-medium mb-2 block">Query</label>
               <Input
@@ -273,6 +346,48 @@ export default function ExportPage() {
                     </option>
                   ))}
               </select>
+            </div>
+          )}
+
+          {sourceType === "aggregation" && (
+            <div>
+              <label className="text-sm font-medium mb-2 block">
+                Select Documents (minimum 2)
+              </label>
+              <div className="space-y-2 max-h-64 overflow-y-auto border border-neon-cyan/30 rounded-lg p-3">
+                {documents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No documents available</p>
+                ) : (
+                  documents.map((doc: Document) => (
+                    <label
+                      key={doc.id}
+                      className="flex items-center space-x-2 p-2 hover:bg-neon-cyan/10 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedDocIds.includes(doc.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedDocIds([...selectedDocIds, doc.id]);
+                          } else {
+                            setSelectedDocIds(selectedDocIds.filter(id => id !== doc.id));
+                          }
+                        }}
+                        className="w-4 h-4 accent-neon-cyan"
+                      />
+                      <span className="text-sm flex-1">
+                        {doc.filename} <span className="text-muted-foreground">({doc.format.toUpperCase()})</span>
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Selected: {selectedDocIds.length} document{selectedDocIds.length !== 1 ? 's' : ''}
+                {selectedDocIds.length > 0 && selectedDocIds.length < 2 && (
+                  <span className="text-yellow-500 ml-2">⚠ Select at least 2 documents</span>
+                )}
+              </p>
             </div>
           )}
 

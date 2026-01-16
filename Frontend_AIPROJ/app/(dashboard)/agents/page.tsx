@@ -16,6 +16,16 @@ interface Message {
   content: string;
   timestamp: Date;
   toolCalls?: ToolCall[];
+  metadata?: {
+    user_message?: string;
+    iterations?: number;
+    trace?: Array<{
+      iteration: number;
+      tool: string;
+      arguments?: any;
+      result?: string;
+    }>;
+  };
 }
 
 interface ToolCall {
@@ -25,19 +35,32 @@ interface ToolCall {
   error?: string;
 }
 
+// Generate unique message ID
+let messageCounter = 0;
+const generateMessageId = () => {
+  messageCounter++;
+  return `msg-${Date.now()}-${messageCounter}`;
+};
+
 export default function AgentsPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: "👋 Hi! I'm your AI Assistant. I can help you with:\n\n• **Document Q&A** - Ask questions about your documents\n• **Data Analysis** - Analyze CSV files and get insights\n• **ML Predictions** - Make predictions using trained models\n• **Research** - Find information across multiple documents\n\nWhat would you like to do?",
+      content: "👋 Hi! I'm your AI Assistant. I can help you with:\n\n• Document Q&A - Ask questions about your documents\n• Data Analysis - Analyze CSV files and get insights\n• ML Predictions - Make predictions using trained models\n• Research - Find information across multiple documents\n\nWhat would you like to do?",
       timestamp: new Date(),
     }
   ]);
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  // Fix hydration issue - only render timestamps on client
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Fetch documents for context
   const { data: documentsData } = useQuery({
@@ -64,22 +87,32 @@ export default function AgentsPage() {
       return await agentAPI.run(task);
     },
     onSuccess: (data) => {
+      // Format the response in a user-friendly way
+      const answer = (data as any).answer || (data as any).result || "Task completed successfully!";
+      const userMessage = (data as any).user_message || "";
+      
       const assistantMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         role: "assistant",
-        content: data.result || "Task completed successfully!",
+        content: answer,
         timestamp: new Date(),
-        toolCalls: data.tools_used?.map((tool: string) => ({
-          tool,
+        metadata: {
+          user_message: userMessage,
+          iterations: (data as any).iterations || 0,
+          trace: (data as any).trace || [],
+        },
+        toolCalls: (data as any).trace?.map((step: any) => ({
+          tool: step.tool || "unknown",
           status: "success" as const,
-        })),
+          result: typeof step.result === 'string' ? step.result : JSON.stringify(step.result),
+        })) || [],
       };
       setMessages(prev => [...prev, assistantMessage]);
       setIsProcessing(false);
     },
     onError: (error: any) => {
       const errorMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         role: "assistant",
         content: `❌ Error: ${error.response?.data?.detail || error.message || "Failed to execute task"}`,
         timestamp: new Date(),
@@ -99,7 +132,7 @@ export default function AgentsPage() {
     if (!input.trim() || isProcessing) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: generateMessageId(),
       role: "user",
       content: input,
       timestamp: new Date(),
@@ -118,7 +151,7 @@ export default function AgentsPage() {
         // Route to RAG Q&A
         const response = await ragAPI.answer({ query: input, top_k: 5 });
         const assistantMessage: Message = {
-          id: Date.now().toString(),
+          id: generateMessageId(),
           role: "assistant",
           content: response.answer,
           timestamp: new Date(),
@@ -138,7 +171,7 @@ export default function AgentsPage() {
         }
         // For demo, use first CSV
         const assistantMessage: Message = {
-          id: Date.now().toString(),
+          id: generateMessageId(),
           role: "assistant",
           content: `I found ${docs.length} CSV file(s). To analyze them, please go to the Document Intelligence page and use the Analytics tab, or upload a CSV file first.`,
           timestamp: new Date(),
@@ -152,7 +185,7 @@ export default function AgentsPage() {
       } else if (lowerInput.includes("predict") || lowerInput.includes("model") || lowerInput.includes("ml")) {
         // Route to ML
         const assistantMessage: Message = {
-          id: Date.now().toString(),
+          id: generateMessageId(),
           role: "assistant",
           content: "To make ML predictions, please go to the ML page and input your feature values. The model supports Iris dataset predictions.",
           timestamp: new Date(),
@@ -170,7 +203,7 @@ export default function AgentsPage() {
       setIsProcessing(false);
     } catch (error: any) {
       const errorMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         role: "assistant",
         content: `❌ ${error.message || "Failed to process your request"}`,
         timestamp: new Date(),
@@ -190,7 +223,7 @@ export default function AgentsPage() {
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div>
           <h1 className="text-3xl font-bold bg-gradient-to-r from-neon-purple to-neon-magenta bg-clip-text text-transparent flex items-center gap-2">
             <Bot className="h-8 w-8" />
@@ -200,16 +233,28 @@ export default function AgentsPage() {
             Intelligent agents that leverage Document Q&A, ML, and Analytics
           </p>
         </div>
-        {toolsData && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Zap className="h-4 w-4 text-neon-yellow" />
-            <span>{toolsData.tools?.length || 0} tools available</span>
-          </div>
-        )}
+        <div className="flex items-center gap-6">
+          {documentsData && (
+            <div className="flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-neon-cyan"></div>
+                <span className="text-muted-foreground">{documentsData.documents?.length || 0} Documents</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-neon-purple"></div>
+                <span className="text-muted-foreground">{documentsData.documents?.filter(d => d.format === 'csv').length || 0} CSV Files</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-neon-magenta"></div>
+                <span className="text-muted-foreground">{toolsData?.tools?.length || 0} Tools</span>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Pre-built Agent Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-shrink-0">
         <Card className="cursor-pointer hover:border-neon-cyan transition-all" onClick={() => setInput("Analyze all my documents and give me key insights")}>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -248,8 +293,8 @@ export default function AgentsPage() {
       </div>
 
       {/* Chat Interface */}
-      <Card className="flex-1 flex flex-col">
-        <CardHeader>
+      <Card className="flex-1 flex flex-col min-h-0">
+        <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
             Chat Interface
@@ -258,7 +303,7 @@ export default function AgentsPage() {
             Natural language interaction with AI agents
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col">
+        <CardContent className="flex-1 flex flex-col min-h-0">
           {/* Messages */}
           <div className="flex-1 overflow-y-auto space-y-4 mb-4 p-4 bg-base-bg rounded-lg">
             {messages.map((message) => (
@@ -283,33 +328,54 @@ export default function AgentsPage() {
                       <span className="text-xs text-neon-purple font-medium">AI Assistant</span>
                     </div>
                   )}
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                   
-                  {/* Tool Calls */}
+                  {/* User Message (if present) */}
+                  {message.metadata?.user_message && (
+                    <div className="mb-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs text-yellow-400">
+                      <span className="font-medium">ℹ️ Note:</span> {message.metadata.user_message}
+                    </div>
+                  )}
+                  
+                  {/* Main Answer */}
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                  </div>
+                  
+                  {/* Tool Execution Steps */}
                   {message.toolCalls && message.toolCalls.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-neon-purple/20 space-y-2">
-                      <p className="text-xs text-muted-foreground">Tools Used:</p>
+                    <div className="mt-4 pt-3 border-t border-neon-purple/20 space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                        <Zap className="h-3 w-3" />
+                        Execution Steps ({message.metadata?.iterations || message.toolCalls.length})
+                      </p>
                       {message.toolCalls.map((tool, idx) => (
-                        <div key={idx} className="flex items-center gap-2 text-xs">
-                          {tool.status === "success" ? (
-                            <Check className="h-3 w-3 text-green-400" />
-                          ) : tool.status === "error" ? (
-                            <X className="h-3 w-3 text-red-400" />
-                          ) : (
-                            <Loader2 className="h-3 w-3 animate-spin text-neon-cyan" />
-                          )}
-                          <span className="text-neon-cyan">{tool.tool}</span>
-                          {tool.result && (
-                            <span className="text-muted-foreground">• {tool.result}</span>
+                        <div key={idx} className="bg-base-bg/50 rounded p-2 space-y-1">
+                          <div className="flex items-center gap-2 text-xs">
+                            {tool.status === "success" ? (
+                              <Check className="h-3 w-3 text-green-400 flex-shrink-0" />
+                            ) : tool.status === "error" ? (
+                              <X className="h-3 w-3 text-red-400 flex-shrink-0" />
+                            ) : (
+                              <Loader2 className="h-3 w-3 animate-spin text-neon-cyan flex-shrink-0" />
+                            )}
+                            <span className="text-neon-cyan font-medium">Step {idx + 1}:</span>
+                            <span className="text-white">{tool.tool}</span>
+                          </div>
+                          {tool.result && tool.result.length < 200 && (
+                            <p className="text-xs text-muted-foreground pl-5 italic">
+                              {tool.result}
+                            </p>
                           )}
                         </div>
                       ))}
                     </div>
                   )}
                   
-                  <p className="text-xs text-muted-foreground mt-2">
-                    {message.timestamp.toLocaleTimeString()}
-                  </p>
+                  {isMounted && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {message.timestamp.toLocaleTimeString()}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}
@@ -334,7 +400,7 @@ export default function AgentsPage() {
           </div>
 
           {/* Input */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-shrink-0">
             <Input
               placeholder="Ask me anything... (e.g., 'What is the revenue in my documents?')"
               value={input}
@@ -357,34 +423,6 @@ export default function AgentsPage() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Tool Execution Log */}
-      {documentsData && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Zap className="h-4 w-4 text-neon-yellow" />
-              Available Context
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <p className="text-neon-cyan font-medium">{documentsData.documents?.length || 0}</p>
-                <p>Documents</p>
-              </div>
-              <div>
-                <p className="text-neon-purple font-medium">{documentsData.documents?.filter(d => d.format === 'csv').length || 0}</p>
-                <p>CSV Files</p>
-              </div>
-              <div>
-                <p className="text-neon-magenta font-medium">{toolsData?.tools?.length || 0}</p>
-                <p>Tools</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

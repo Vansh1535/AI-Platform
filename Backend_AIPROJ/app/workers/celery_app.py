@@ -1,14 +1,18 @@
 """
 Celery application configuration for background task processing.
 """
+import os
 from celery import Celery
 from app.core.config import settings
+
+# Get Redis URL from environment or use default
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Create Celery app
 celery_app = Celery(
     "enterprise_project",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/0"
+    broker=redis_url,
+    backend=redis_url
 )
 
 # Configure Celery

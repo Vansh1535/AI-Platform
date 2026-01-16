@@ -69,7 +69,7 @@ Write-Host "✅ FastAPI Backend started" -ForegroundColor Green
 # 4. Start Next.js Frontend
 Write-Host "[4/5] Starting Next.js Frontend..." -ForegroundColor Yellow
 $FrontendCommand = "if (Test-Path 'node_modules') { npm run dev } else { Write-Host 'Dependencies not installed! Run: npm install' -ForegroundColor Red; Read-Host 'Press Enter to exit' }"
-Start-ServiceWindow -Title "Next.js Frontend (Port 3001)" -Command $FrontendCommand -WorkingDirectory $FrontendPath -Color "Blue"
+Start-ServiceWindow -Title "Next.js Frontend (Port 3000)" -Command $FrontendCommand -WorkingDirectory $FrontendPath -Color "Blue"
 Start-Sleep -Seconds 5
 Write-Host "✅ Next.js Frontend started" -ForegroundColor Green
 
@@ -123,7 +123,7 @@ Write-Host ""
 
 # Open browser
 Write-Host "Opening frontend in browser..." -ForegroundColor Cyan
-Start-Process "http://localhost:3001"
+Start-Process "http://localhost:3000"
 
 Write-Host ""
 Write-Host "Platform is ready for testing!" -ForegroundColor Green

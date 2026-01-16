@@ -255,9 +255,17 @@ Answer:"""
                 
                 # Extract citations from results
                 citations = []
-                for result in results:
+                for idx, result in enumerate(results):
                     try:
-                        citation = {"chunk": result.get("chunk", "")[:100] + "..."}
+                        # Debug log to check score
+                        score_value = result.get("score", result.get("relevance_score", 0))
+                        if idx == 0:  # Log first result for debugging
+                            logger.info(f"First result score: {score_value}, keys: {list(result.keys())}")
+                        
+                        citation = {
+                            "chunk": result.get("chunk", "")[:100] + "...",
+                            "score": score_value
+                        }
                         if "metadata" in result:
                             metadata = result["metadata"]
                             if "page" in metadata:
@@ -423,7 +431,10 @@ Answer:"""
         citations = []
         for result in results:
             try:
-                citation = {"chunk": result.get("chunk", "")[:100] + "..."}
+                citation = {
+                    "chunk": result.get("chunk", "")[:100] + "...",
+                    "score": result.get("score", result.get("relevance_score", 0))
+                }
                 if "metadata" in result:
                     metadata = result["metadata"]
                     if "page" in metadata:

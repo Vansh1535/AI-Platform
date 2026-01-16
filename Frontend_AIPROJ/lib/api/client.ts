@@ -7,7 +7,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000,
+  timeout: 120000, // 2 minutes for long-running operations (aggregation, summarization with LLMs)
 });
 
 // Response interceptor for global error handling

@@ -3,6 +3,7 @@ uvicorn
 pydantic
 scikit-learn
 joblib
+pandas
 sentence-transformers
 chromadb
 pdfplumber

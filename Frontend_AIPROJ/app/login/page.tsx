@@ -123,7 +123,12 @@ export default function LoginPage() {
           </form>
 
           {/* Footer */}
-          <div className="mt-6 pt-6 border-t border-slate-700 text-center">
+          <div className="mt-6 pt-6 border-t border-slate-700 text-center space-y-3">
+            <div className="bg-slate-900/50 rounded-lg p-3 text-left">
+              <p className="text-xs text-slate-400 mb-1">Default Credentials:</p>
+              <p className="text-sm font-mono text-cyan-400">Username: admin</p>
+              <p className="text-sm font-mono text-cyan-400">Password: admin123</p>
+            </div>
             <p className="text-sm text-slate-400">
               Public users don't need to login.{' '}
               <button

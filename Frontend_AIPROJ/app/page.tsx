@@ -22,45 +22,31 @@ import TechStackFooter from "@/components/layout/TechStackFooter";
 const features = [
   {
     title: "Document Intelligence",
-    description: "Upload and process PDFs, CSVs, TXT, DOCX, and Markdown files with intelligent chunking and deduplication",
+    description: "Upload, manage, and analyze documents with RAG search, Q&A, summarization, and CSV analytics - all in one place",
     icon: FileText,
     href: "/documents",
     gradient: "from-neon-cyan to-neon-purple",
   },
   {
-    title: "RAG Search & Q&A",
-    description: "Semantic search with vector similarity and AI-powered question answering with citations",
-    icon: Search,
-    href: "/rag",
+    title: "AI Agents",
+    description: "Multi-tool AI agents with intelligent routing for document Q&A, data analysis, and ML predictions",
+    icon: Bot,
+    href: "/agents",
     gradient: "from-neon-magenta to-neon-pink",
   },
   {
-    title: "CSV Analytics",
-    description: "Automatic statistical profiling, data quality assessment, and LLM-powered insights",
-    icon: BarChart3,
-    href: "/analytics",
+    title: "Machine Learning",
+    description: "Train, evaluate, and deploy ML models with real-time predictions and performance metrics",
+    icon: Brain,
+    href: "/ml",
     gradient: "from-neon-purple to-neon-magenta",
   },
   {
-    title: "AI Agent Orchestrator",
-    description: "Multi-tool execution with iterative reasoning and transparent decision-making",
-    icon: Bot,
-    href: "/agent",
-    gradient: "from-neon-cyan to-neon-green",
-  },
-  {
-    title: "ML Predictions",
-    description: "Real-time machine learning predictions with confidence scores and caching",
-    icon: Brain,
-    href: "/ml",
-    gradient: "from-neon-green to-neon-cyan",
-  },
-  {
-    title: "Export & Reports",
-    description: "Generate professional reports in Markdown or PDF with customizable templates",
+    title: "Export Reports",
+    description: "Generate PDF and Markdown reports from RAG insights, analytics, and summaries with custom templates",
     icon: FileDown,
     href: "/export",
-    gradient: "from-neon-pink to-neon-purple",
+    gradient: "from-neon-cyan to-neon-green",
   },
 ];
 
@@ -72,8 +58,13 @@ export default function LandingPage() {
   });
 
   const totalDocs = docsData?.pagination.total_count || 0;
-  const successfulDocs = docsData?.health_summary.success?.count || 0;
-  const totalChunks = docsData?.health_summary.success?.total_chunks || 0;
+  // Support both "success" and "completed" status names
+  const successfulDocs = 
+    (docsData?.health_summary?.success?.count || 0) + 
+    ((docsData?.health_summary as any)?.completed?.count || 0);
+  const totalChunks = 
+    (docsData?.health_summary?.success?.total_chunks || 0) + 
+    ((docsData?.health_summary as any)?.completed?.total_chunks || 0);
 
   const stats = [
     { label: "Documents Processed", value: totalDocs.toLocaleString(), icon: FileText },
@@ -119,11 +110,6 @@ export default function LandingPage() {
               <Button size="lg" className="group">
                 Get Started
                 <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-              </Button>
-            </Link>
-            <Link href="/health">
-              <Button size="lg" variant="outline">
-                View System Status
               </Button>
             </Link>
           </motion.div>

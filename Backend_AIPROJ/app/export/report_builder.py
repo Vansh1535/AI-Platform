@@ -45,6 +45,13 @@ def build_rag_answer_report(payload: Dict[str, Any]) -> str:
     used_chunks = payload.get("used_chunks", 0)
     meta = payload.get("meta", {})
     
+    # Check if we have a meaningful answer
+    # Look for negative patterns anywhere in the first 200 chars
+    answer_lower = answer.lower()[:200]
+    no_answer_patterns = ["no answer", "no relevant information", "not found", "couldn't find", "no information"]
+    has_no_answer = any(pattern in answer_lower for pattern in no_answer_patterns)
+    has_answer = used_chunks > 0 and answer and not has_no_answer
+    
     # Build report
     report = f"""# RAG Answer Report
 
@@ -57,62 +64,75 @@ def build_rag_answer_report(payload: Dict[str, Any]) -> str:
 
 {answer}
 
----
-
-## Evidence & Citations
-
-**Total Chunks Used**: {used_chunks}
+"""
+    
+    # If no answer, provide helpful guidance
+    if not has_answer:
+        report += """
+> **Why no answer?**  
+> Your query didn't match any content in the uploaded documents. This could mean:
+> - The information you're looking for isn't in your document library
+> - Try rephrasing your question or using different keywords
+> - Make sure relevant documents have been uploaded and processed
 
 """
     
-    # Add citations
-    if citations:
+    report += "---\n\n"
+    
+    # Add citations only if we have them
+    if citations and has_answer:
+        report += f"## Evidence & Citations\n\n**Sources Used**: {used_chunks} document chunks\n\n"
         report += "### Source Documents\n\n"
-        for i, citation in enumerate(citations, 1):
+        for i, citation in enumerate(citations[:5], 1):  # Limit to top 5
             score = citation.get("score", citation.get("relevance_score", 0))
+            # Handle None score
+            if score is None:
+                score = 0
             doc_id = citation.get("document_id", citation.get("chunk_id", f"doc_{i}"))
-            content = citation.get("content", citation.get("text", ""))
+            content = citation.get("content", citation.get("text", citation.get("chunk", "")))
+            source = citation.get("source", citation.get("filename", ""))
             
-            report += f"**Citation {i}** (Relevance: {score:.2f})\n"
-            report += f"- Document ID: `{doc_id}`\n"
+            report += f"**Source {i}** (Relevance: {score*100:.0f}%)\n"
+            if source:
+                report += f"- Document: {source}\n"
             
             if content:
                 # Truncate long content
-                display_content = content[:200] + "..." if len(content) > 200 else content
+                display_content = content[:300] + "..." if len(content) > 300 else content
                 report += f"- Excerpt: *{display_content}*\n"
             
             report += "\n"
-    else:
-        report += "*No citations available*\n\n"
     
-    # Add metadata with comprehensive observability snapshot
-    report += "---\n\n## Observability Snapshot\n\n"
+    # Add technical details section only if requested or if there are meaningful metrics
+    degradation_level = meta.get('degradation_level', 'none')
+    graceful_message = meta.get('graceful_message', '')
     
-    # Ensure complete telemetry
-    from app.core.telemetry import ensure_complete_telemetry
-    meta = ensure_complete_telemetry(meta)
+    # Only show technical details if there's degradation or explicit telemetry
+    show_tech_details = degradation_level not in ['none', None] or graceful_message
     
-    # Latency breakdown
-    report += "### Performance\n\n"
-    report += f"- **Total Latency**: {meta.get('latency_ms_total', 0)}ms\n"
-    report += f"- **Retrieval**: {meta.get('latency_ms_retrieval', 0)}ms\n"
-    report += f"- **Embedding**: {meta.get('latency_ms_embedding', 0)}ms\n"
-    report += f"- **LLM**: {meta.get('latency_ms_llm', 0)}ms\n"
-    
-    # Routing and decision
-    report += "\n### Routing & Decision\n\n"
-    report += f"- **Routing**: {meta.get('routing_decision', 'N/A')}\n"
-    report += f"- **Confidence**: {meta.get('confidence_score', 'N/A')}\n"
-    report += f"- **Cache Hit**: {'Yes' if meta.get('cache_hit') else 'No'}\n"
-    report += f"- **Retry Count**: {meta.get('retry_count', 0)}\n"
-    
-    # Degradation and resilience
-    report += "\n### Resilience\n\n"
-    report += f"- **Degradation Level**: {meta.get('degradation_level', 'none')}\n"
-    report += f"- **Fallback Triggered**: {'Yes' if meta.get('fallback_triggered') else 'No'}\n"
-    
-    if meta.get('graceful_message'):
-        report += f"\n> **Note**: {meta.get('graceful_message')}\n"
+    if show_tech_details:
+        report += "---\n\n## Technical Details\n\n"
+        
+        # Ensure complete telemetry
+        from app.core.telemetry import ensure_complete_telemetry
+        meta = ensure_complete_telemetry(meta)
+        
+        # Performance
+        if meta.get('latency_ms_total', 0) > 0:
+            report += "### Performance\n\n"
+            report += f"- **Total Time**: {meta.get('latency_ms_total', 0)}ms\n"
+            if meta.get('latency_ms_retrieval', 0) > 0:
+                report += f"- **Search Time**: {meta['latency_ms_retrieval']}ms\n"
+            if meta.get('latency_ms_llm', 0) > 0:
+                report += f"- **Processing Time**: {meta['latency_ms_llm']}ms\n"
+            report += "\n"
+        
+        # Only show degradation if it exists
+        if degradation_level not in ['none', None]:
+            report += "### System Status\n\n"
+            report += f"- **Status**: {degradation_level}\n"
+            if graceful_message:
+                report += f"\n> {graceful_message}\n"
     
     return report
 
@@ -129,13 +149,14 @@ def build_summary_report(payload: Dict[str, Any]) -> str:
     """
     summary = payload.get("summary", "No summary generated")
     document_id = payload.get("document_id", "Unknown")
+    document_name = payload.get("document_name", payload.get("filename", "Unknown"))
     mode = payload.get("mode", "hybrid")
     meta = payload.get("meta", {})
     
     report = f"""# Document Summary Report
 
 **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
-**Document ID**: `{document_id}`  
+**Document**: {document_name}  
 **Mode**: {mode}
 
 ---
@@ -146,42 +167,35 @@ def build_summary_report(payload: Dict[str, Any]) -> str:
 
 ---
 
-## Analysis Details
-
 """
     
-    # Add metadata with comprehensive observability snapshot
-    report += f"\n---\n\n## Observability Snapshot\n\n"
+    # Only add technical details if there's degradation or issues
+    degradation_level = meta.get('degradation_level', 'none')
+    graceful_message = meta.get('graceful_message', '')
     
-    # Ensure complete telemetry
-    from app.core.telemetry import ensure_complete_telemetry
-    meta = ensure_complete_telemetry(meta)
-    
-    # Latency breakdown
-    report += "### Performance\n\n"
-    report += f"- **Total Latency**: {meta.get('latency_ms_total', 0)}ms\n"
-    
-    if meta.get('latency_ms_retrieval'):
-        report += f"- **Retrieval**: {meta['latency_ms_retrieval']}ms\n"
-    if meta.get('latency_ms_embedding'):
-        report += f"- **Embedding**: {meta['latency_ms_embedding']}ms\n"
-    if meta.get('latency_ms_llm'):
-        report += f"- **LLM**: {meta['latency_ms_llm']}ms\n"
-    
-    # Routing and decision
-    report += "\n### Routing & Decision\n\n"
-    report += f"- **Routing**: {meta.get('routing_decision', 'N/A')}\n"
-    report += f"- **Confidence**: {meta.get('confidence_score', 'N/A')}\n"
-    report += f"- **Cache Hit**: {'Yes' if meta.get('cache_hit') else 'No'}\n"
-    report += f"- **Retry Count**: {meta.get('retry_count', 0)}\n"
-    
-    # Degradation and resilience
-    report += "\n### Resilience\n\n"
-    report += f"- **Degradation Level**: {meta.get('degradation_level', 'none')}\n"
-    report += f"- **Fallback Triggered**: {'Yes' if meta.get('fallback_triggered') else 'No'}\n"
-    
-    if meta.get('graceful_message'):
-        report += f"\n> **Note**: {meta.get('graceful_message')}\n"
+    if degradation_level not in ['none', None] or graceful_message:
+        report += "\n## Technical Details\n\n"
+        
+        # Ensure complete telemetry
+        from app.core.telemetry import ensure_complete_telemetry
+        meta = ensure_complete_telemetry(meta)
+        
+        # Performance metrics
+        if meta.get('latency_ms_total', 0) > 0:
+            report += "### Performance\n\n"
+            report += f"- **Total Time**: {meta.get('latency_ms_total', 0)}ms\n"
+            if meta.get('latency_ms_retrieval', 0) > 0:
+                report += f"- **Retrieval**: {meta['latency_ms_retrieval']}ms\n"
+            if meta.get('latency_ms_llm', 0) > 0:
+                report += f"- **Processing**: {meta['latency_ms_llm']}ms\n"
+            report += "\n"
+        
+        # System status
+        report += "### System Status\n\n"
+        report += f"- **Status**: {degradation_level}\n"
+        
+        if graceful_message:
+            report += f"\n> {graceful_message}\n"
     
     return report
 
@@ -191,25 +205,26 @@ def build_csv_insights_report(payload: Dict[str, Any]) -> str:
     Generate Markdown report for CSV insights.
     
     Args:
-        payload: CSV insights response with dataset_name, insights, metadata
+        payload: CSV insights response with summary, column_profiles, data_quality, meta
         
     Returns:
         Markdown formatted report
     """
-    dataset_name = payload.get("dataset_name", "Unknown Dataset")
-    insights = payload.get("insights", {})
-    meta = payload.get("meta", {})
-    
-    # Extract insights data
-    row_count = insights.get("row_count", 0)
-    column_count = insights.get("column_count", 0)
-    numeric_columns = insights.get("numeric_columns", 0)
-    categorical_columns = insights.get("categorical_columns", 0)
-    column_profiles = insights.get("column_profiles", {})
-    data_quality = insights.get("data_quality", {})
-    llm_insights = insights.get("llm_insights")
-    
-    report = f"""# CSV Insights Report
+    try:
+        dataset_name = payload.get("document_name", payload.get("dataset_name", "Unknown Dataset"))
+        summary = payload.get("summary", {})
+        meta = payload.get("meta", {})
+        
+        # Extract insights data from new structure
+        row_count = summary.get("rows", 0)
+        column_count = summary.get("columns", 0)
+        numeric_columns = summary.get("numeric_columns", 0)
+        categorical_columns = summary.get("categorical_columns", 0)
+        column_profiles = payload.get("column_profiles", {})
+        data_quality = payload.get("data_quality", {})
+        llm_insights = payload.get("llm_insights")
+        
+        report = f"""# CSV Insights Report
 
 **Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 **Dataset**: `{dataset_name}`
@@ -224,128 +239,116 @@ def build_csv_insights_report(payload: Dict[str, Any]) -> str:
 - **Categorical Columns**: {categorical_columns}
 
 """
-    
-    # Add LLM insights if available
-    if llm_insights:
-        report += "---\n\n## AI-Powered Insights\n\n"
         
-        # Dataset explanation
-        if llm_insights.get("dataset_explanation"):
-            report += f"{llm_insights['dataset_explanation']}\n\n"
-        
-        # Key patterns
-        patterns = llm_insights.get("key_patterns", [])
-        if patterns:
-            report += "### Key Patterns\n\n"
-            for pattern in patterns:
-                report += f"- {pattern}\n"
-            report += "\n"
-        
-        # Relationships
-        relationships = llm_insights.get("relationships", [])
-        if relationships:
-            report += "### Relationships\n\n"
-            for rel in relationships:
-                report += f"- {rel}\n"
-            report += "\n"
-        
-        # Outliers and risks
-        risks = llm_insights.get("outliers_and_risks", [])
-        if risks:
-            report += "### ⚠️ Outliers & Risks\n\n"
-            for risk in risks:
-                report += f"- {risk}\n"
-            report += "\n"
-        
-        # Data quality
-        if llm_insights.get("data_quality_commentary"):
-            report += f"### Data Quality Commentary\n\n{llm_insights['data_quality_commentary']}\n\n"
-    
-    # Add deterministic/statistical analysis
-    report += "---\n\n## Statistical Analysis\n\n"
-    
-    # Add column profiles
-    if column_profiles:
-        report += "### Column Profiles\n\n"
-        for col_name, profile in column_profiles.items():
-            col_type = profile.get("type", "unknown")
-            report += f"**`{col_name}`** ({col_type})\n\n"
+        # Add LLM insights if available
+        if llm_insights:
+            report += "---\n\n## AI-Powered Insights\n\n"
             
-            if col_type == "numeric":
-                report += f"- Mean: {profile.get('mean', 'N/A')}\n"
-                report += f"- Median: {profile.get('median', 'N/A')}\n"
-                report += f"- Std Dev: {profile.get('std', 'N/A')}\n"
-                report += f"- Min: {profile.get('min', 'N/A')}\n"
-                report += f"- Max: {profile.get('max', 'N/A')}\n"
-            elif col_type == "categorical":
-                report += f"- Unique Values: {profile.get('unique_values', 'N/A')}\n"
+            # Dataset explanation
+            if llm_insights.get("dataset_explanation"):
+                report += f"{llm_insights['dataset_explanation']}\n\n"
+            
+            # Key patterns
+            patterns = llm_insights.get("key_patterns", [])
+            if patterns and isinstance(patterns, list):
+                report += "### Key Patterns\n\n"
+                for pattern in patterns:
+                    pattern_str = str(pattern) if not isinstance(pattern, str) else pattern
+                    report += f"- {pattern_str}\n"
+                report += "\n"
+            
+            # Relationships
+            relationships = llm_insights.get("relationships", [])
+            if relationships and isinstance(relationships, list):
+                report += "### Relationships\n\n"
+                for rel in relationships:
+                    rel_str = str(rel) if not isinstance(rel, str) else rel
+                    report += f"- {rel_str}\n"
+                report += "\n"
+            
+            # Outliers and risks
+            risks = llm_insights.get("outliers_and_risks", [])
+            if risks and isinstance(risks, list):
+                report += "### ⚠️ Outliers & Risks\n\n"
+                for risk in risks:
+                    risk_str = str(risk) if not isinstance(risk, str) else risk
+                    report += f"- {risk_str}\n"
+                report += "\n"
+            
+            # Data quality
+            if llm_insights.get("data_quality_commentary"):
+                report += f"### Data Quality Commentary\n\n{llm_insights['data_quality_commentary']}\n\n"
+        
+        # Add deterministic/statistical analysis
+        report += "---\n\n## Statistical Analysis\n\n"
+        
+        # Add column profiles
+        if column_profiles:
+            report += "### Column Profiles\n\n"
+            for col_name, profile in column_profiles.items():
+                col_type = profile.get("type", "unknown")
+                report += f"**`{col_name}`** ({col_type})\n\n"
                 
-                top_values = profile.get("top_values", {})
-                if top_values:
-                    report += "- Top Values:\n"
-                    for value, count in list(top_values.items())[:5]:
-                        report += f"  - `{value}`: {count}\n"
+                if col_type == "numeric":
+                    report += f"- Mean: {profile.get('mean', 'N/A')}\n"
+                    report += f"- Median: {profile.get('median', 'N/A')}\n"
+                    report += f"- Std Dev: {profile.get('std', 'N/A')}\n"
+                    report += f"- Min: {profile.get('min', 'N/A')}\n"
+                    report += f"- Max: {profile.get('max', 'N/A')}\n"
+                elif col_type == "categorical":
+                    report += f"- Unique Values: {profile.get('unique_values', 'N/A')}\n"
+                    
+                    top_values = profile.get("top_values", {})
+                    if top_values:
+                        report += "- Top Values:\n"
+                        for value, count in list(top_values.items())[:5]:
+                            report += f"  - `{value}`: {count}\n"
+                
+                report += "\n"
+        # Add data quality
+        report += "---\n\n## Data Quality Assessment\n\n"
+        null_ratio = data_quality.get("null_ratio", 0.0)
+        duplicate_ratio = data_quality.get("duplicate_ratio", 0.0)
+        quality_flags = data_quality.get("quality_flags", data_quality.get("flags", []))
+        
+        report += f"- **Missing Data**: {null_ratio * 100:.1f}%\n"
+        report += f"- **Duplicate Rows**: {duplicate_ratio * 100:.1f}%\n"
+        
+        if quality_flags:
+            # Ensure all flags are strings
+            flag_strings = [str(flag) if not isinstance(flag, str) else flag for flag in quality_flags]
+            report += f"- **Quality Flags**: {', '.join(flag_strings)}\n"
+        
+        # Only add technical details if there's degradation or issues
+        degradation_level = meta.get('degradation_level', 'none')
+        graceful_message = meta.get('graceful_message', '')
+        
+        if degradation_level not in ['none', None] or graceful_message:
+            report += f"\n---\n\n## Technical Details\n\n"
             
-            report += "\n"
-    
-    # Add data quality
-    report += "---\n\n## Data Quality Assessment\n\n"
-    null_ratio = data_quality.get("null_ratio", 0.0)
-    duplicate_ratio = data_quality.get("duplicate_ratio", 0.0)
-    quality_flags = data_quality.get("quality_flags", [])
-    
-    report += f"- **Missing Data**: {null_ratio * 100:.1f}%\n"
-    report += f"- **Duplicate Rows**: {duplicate_ratio * 100:.1f}%\n"
-    
-    if quality_flags:
-        report += f"- **Quality Flags**: {', '.join(quality_flags)}\n"
-    
-    # Add processing metadata with comprehensive observability snapshot
-    report += f"\n---\n\n## Observability Snapshot\n\n"
-    
-    # Ensure complete telemetry
-    from app.core.telemetry import ensure_complete_telemetry
-    meta = ensure_complete_telemetry(meta)
-    
-    # Latency breakdown
-    report += "### Performance\n\n"
-    report += f"- **Total Latency**: {meta.get('latency_ms_total', 0)}ms\n"
-    
-    if meta.get('latency_ms_llm'):
-        report += f"- **LLM Latency**: {meta['latency_ms_llm']}ms\n"
-    
-    # LLM usage
-    report += "\n### LLM Usage\n\n"
-    report += f"- **LLM Used**: {'Yes' if meta.get('llm_used') else 'No'}\n"
-    
-    if meta.get('enable_llm_insights') is not None:
-        report += f"- **LLM Insights Enabled**: {'Yes' if meta['enable_llm_insights'] else 'No'}\n"
-    
-    # Degradation and resilience
-    report += "\n### Resilience\n\n"
-    report += f"- **Degradation Level**: {meta.get('degradation_level', 'none')}\n"
-    report += f"- **Fallback Triggered**: {'Yes' if meta.get('fallback_triggered') else 'No'}\n"
-    
-    if meta.get('graceful_message'):
-        report += f"\n> **Note**: {meta.get('graceful_message')}\n"
-    
-    return report
-    report += "---\n\n## Data Quality Assessment\n\n"
-    report += f"- **Missing Data**: {data_quality.get('null_ratio', 0)*100:.1f}%\n"
-    report += f"- **Duplicate Rows**: {data_quality.get('duplicate_ratio', 0)*100:.1f}%\n"
-    
-    quality_flags = data_quality.get("flags", [])
-    if quality_flags:
-        report += "- **Quality Flags**: " + ", ".join(quality_flags) + "\n"
-    
-    # Add metadata
-    report += "\n---\n\n## Processing Metadata\n\n"
-    report += f"- **Latency**: {meta.get('latency_ms_total', 0)}ms\n"
-    if meta.get('latency_ms_llm'):
-        report += f"- **LLM Latency**: {meta.get('latency_ms_llm')}ms\n"
-    report += f"- **Degradation Level**: {meta.get('degradation_level', 'none')}\n"
-    
-    return report
+            # Ensure complete telemetry
+            from app.core.telemetry import ensure_complete_telemetry
+            meta = ensure_complete_telemetry(meta)
+            
+            # Performance metrics
+            if meta.get('latency_ms_total', 0) > 0:
+                report += "### Performance\n\n"
+                report += f"- **Total Time**: {meta.get('latency_ms_total', 0)}ms\n"
+                if meta.get('latency_ms_llm', 0) > 0:
+                    report += f"- **Processing Time**: {meta['latency_ms_llm']}ms\n"
+                report += "\n"
+            
+            # System status
+            report += "### System Status\n\n"
+            report += f"- **Status**: {degradation_level}\n"
+            
+            if graceful_message:
+                report += f"\n> {graceful_message}\n"
+        
+        return report
+    except Exception as e:
+        logger.error(f"CSV report failed: {str(e)}")
+        raise
 
 
 def build_aggregation_report(payload: Dict[str, Any]) -> str:
@@ -353,14 +356,15 @@ def build_aggregation_report(payload: Dict[str, Any]) -> str:
     Generate Markdown report for cross-file aggregated insights.
     
     Args:
-        payload: Aggregation response with document_summaries and aggregated_insights
+        payload: Aggregation response with per_document and aggregated_insights
         
     Returns:
         Markdown formatted report
     """
-    document_summaries = payload.get("document_summaries", [])
+    # Handle both "per_document" (new API) and "document_summaries" (legacy)
+    document_summaries = payload.get("per_document", payload.get("document_summaries", []))
     aggregated = payload.get("aggregated_insights", {})
-    failed_docs = payload.get("failed_documents", [])
+    failed_docs = payload.get("failed_documents") or []  # Handle None
     meta = payload.get("meta", {})
     
     report = f"""# Cross-File Insights Report
@@ -398,9 +402,10 @@ def build_aggregation_report(payload: Dict[str, Any]) -> str:
     report += "---\n\n## Per-Document Summaries\n\n"
     for i, doc in enumerate(document_summaries, 1):
         doc_id = doc.get("document_id", f"doc_{i}")
+        doc_name = doc.get("document_name", doc_id)
         doc_summary = doc.get("summary", "No summary available")
         
-        report += f"### Document {i}: `{doc_id}`\n\n"
+        report += f"### Document {i}: {doc_name}\n\n"
         report += f"{doc_summary}\n\n"
     
     # Add failed documents if any
@@ -413,44 +418,35 @@ def build_aggregation_report(payload: Dict[str, Any]) -> str:
             report += f"- `{doc_id}`: {error}\n"
         report += "\n"
     
-    # Add metadata with comprehensive observability snapshot
-    report += "---\n\n## Observability Snapshot\n\n"
+    # Only show technical details if there's degradation or failures
+    degradation_level = meta.get('degradation_level', 'none')
+    graceful_message = meta.get('graceful_message', '')
+    has_failures = len(failed_docs) > 0
     
-    # Ensure complete telemetry
-    from app.core.telemetry import ensure_complete_telemetry
-    meta = ensure_complete_telemetry(meta)
-    
-    # Latency breakdown
-    report += "### Performance\n\n"
-    report += f"- **Total Latency**: {meta.get('latency_ms_total', 0)}ms\n"
-    
-    if meta.get('latency_ms_summarization'):
-        report += f"- **Summarization**: {meta['latency_ms_summarization']}ms\n"
-    if meta.get('latency_ms_aggregation'):
-        report += f"- **Aggregation**: {meta['latency_ms_aggregation']}ms\n"
-    if meta.get('latency_ms_clustering'):
-        report += f"- **Clustering**: {meta['latency_ms_clustering']}ms\n"
-    
-    # Files and processing
-    report += "\n### Processing\n\n"
-    report += f"- **Files Processed**: {meta.get('files_processed', len(document_summaries))}\n"
-    report += f"- **Files Failed**: {meta.get('files_failed', len(failed_docs))}\n"
-    report += f"- **Routing**: {meta.get('routing', 'insight_aggregator')}\n"
-    
-    # Clustering and semantic features
-    if meta.get('semantic_clustering_used'):
-        report += "\n### Semantic Analysis\n\n"
-        report += f"- **Clustering Used**: Yes\n"
-        report += f"- **Cluster Count**: {meta.get('cluster_count', 0)}\n"
-        report += f"- **Avg Cluster Confidence**: {meta.get('avg_cluster_confidence', 'N/A')}\n"
-    
-    # Degradation and resilience
-    report += "\n### Resilience\n\n"
-    report += f"- **Degradation Level**: {meta.get('degradation_level', 'none')}\n"
-    report += f"- **Fallback Triggered**: {'Yes' if meta.get('fallback_triggered') else 'No'}\n"
-    
-    if meta.get('graceful_message'):
-        report += f"\n> **Note**: {meta.get('graceful_message')}\n"
+    if degradation_level not in ['none', None] or graceful_message or has_failures:
+        report += "---\n\n## Technical Details\n\n"
+        
+        # Ensure complete telemetry
+        from app.core.telemetry import ensure_complete_telemetry
+        meta = ensure_complete_telemetry(meta)
+        
+        # Performance metrics if significant
+        if meta.get('latency_ms_total', 0) > 0:
+            report += "### Performance\n\n"
+            report += f"- **Total Time**: {meta.get('latency_ms_total', 0)}ms\n"
+            if meta.get('latency_ms_aggregation', 0) > 0:
+                report += f"- **Aggregation**: {meta['latency_ms_aggregation']}ms\n"
+            report += "\n"
+        
+        # Processing status
+        report += "### Processing Status\n\n"
+        report += f"- **Files Processed**: {meta.get('files_processed', len(document_summaries))}\n"
+        if has_failures:
+            report += f"- **Files Failed**: {len(failed_docs)}\n"
+        report += f"- **Status**: {degradation_level}\n"
+        
+        if graceful_message:
+            report += f"\n> {graceful_message}\n"
     
     return report
 

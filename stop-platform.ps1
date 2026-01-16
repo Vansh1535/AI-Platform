@@ -64,7 +64,7 @@ Stop-ServiceByName -ProcessName "redis-server" -DisplayName "Redis Server"
 
 Write-Host ""
 Write-Host "[5/5] Checking ports..." -ForegroundColor Cyan
-Stop-ServiceByPort -Port 3001 -DisplayName "Frontend (3001)"
+Stop-ServiceByPort -Port 3000 -DisplayName "Frontend (3000)"
 Stop-ServiceByPort -Port 8000 -DisplayName "Backend (8000)"
 Stop-ServiceByPort -Port 6379 -DisplayName "Redis (6379)"
 
