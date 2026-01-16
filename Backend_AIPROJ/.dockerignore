@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg-info/
 
 # Virtual environments
 venv/
@@ -13,22 +14,55 @@ ENV/
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
 
 # Data and uploads (will use volumes)
 data/uploads/*
 data/vector_store/*
 artifacts/
 
+# Documentation (not needed in container)
+docs/
+*.md
+README.md
+DEPLOYMENT_GUIDE.md
+REFACTORING_COMPLETE.md
+project_structure_final.txt
+
+# Scripts (not needed in container)
+scripts/
+
 # Environment files
 .env
 .env.local
+.env.*
+!.env.example
 
 # Logs
 *.log
+logs/
 
 # Database
 *.db
 *.sqlite3
+
+# Redis data
+Redis/
+
+# Git
+.git/
+.gitignore
+
+# Docker files (not needed inside image)
+Dockerfile
+docker-compose.yml
 
 # OS
 .DS_Store
