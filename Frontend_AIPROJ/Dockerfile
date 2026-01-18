@@ -9,7 +9,8 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 
 # Install dependencies (use --legacy-peer-deps to handle peer dependency conflicts)
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps && \
+    npm cache clean --force
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -19,10 +20,12 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Set build-time environment variable
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 
-# Build Next.js
-RUN npm run build
+# Build Next.js with cleanup
+RUN npm run build && \
+    rm -rf .next/cache
 
 # Production image, copy all the files and run next
 FROM base AS runner
@@ -32,22 +35,19 @@ ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 
 # Create non-root user
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
 # Copy built files (standalone build includes everything needed)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
 
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
 CMD ["node", "server.js"]
