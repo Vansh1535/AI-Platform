@@ -41,7 +41,6 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Copy built files (standalone build includes everything needed)
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
 
