@@ -7,8 +7,8 @@ pandas
 
 # CPU-only PyTorch for Railway 4GB limit (same performance, smaller size)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.1.0+cpu
-torchvision==0.16.0+cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
 
 # Embeddings and vector store (will use CPU-only PyTorch above)
 sentence-transformers
