@@ -15,8 +15,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+Backend_AIPROJ/lib/
+Backend_AIPROJ/lib64/
 parts/
 sdist/
 var/
