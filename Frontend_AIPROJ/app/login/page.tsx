@@ -127,7 +127,7 @@ export default function LoginPage() {
             <div className="bg-slate-900/50 rounded-lg p-3 text-left">
               <p className="text-xs text-slate-400 mb-1">Default Credentials:</p>
               <p className="text-sm font-mono text-cyan-400">Username: admin</p>
-              <p className="text-sm font-mono text-cyan-400">Password: admin123</p>
+              <p className="text-sm font-mono text-cyan-400">Password: SecurePassword123!</p>
             </div>
             <p className="text-sm text-slate-400">
               Public users don't need to login.{' '}
