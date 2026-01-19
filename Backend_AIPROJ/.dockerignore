@@ -26,7 +26,8 @@ tests/
 # Data and uploads (will use volumes)
 data/uploads/*
 data/vector_store/*
-artifacts/
+artifacts/*
+!artifacts/model.pkl
 
 # Documentation (not needed in container)
 docs/

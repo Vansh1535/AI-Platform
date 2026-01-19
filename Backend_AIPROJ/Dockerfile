@@ -43,6 +43,7 @@ ENV PYTHONUNBUFFERED=1
 # Copy application code (exclude unnecessary files)
 COPY app ./app
 COPY alembic ./alembic
+COPY artifacts ./artifacts
 
 # Create necessary directories
 RUN mkdir -p data/uploads data/vector_store
