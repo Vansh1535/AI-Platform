@@ -81,9 +81,9 @@ data/exports/
 # ============================================
 # ML Models & Artifacts
 # ============================================
-artifacts/
+artifacts/*
+!artifacts/model.pkl
 models/
-*.pkl
 *.pth
 *.onnx
 *.h5

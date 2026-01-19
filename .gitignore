@@ -53,7 +53,8 @@ data/uploads/*
 !data/uploads/.gitkeep
 data/vector_store/*
 !data/vector_store/.gitkeep
-artifacts/
+artifacts/*
+!artifacts/model.pkl
 *.db
 
 # Node.js
